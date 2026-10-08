@@ -3,6 +3,7 @@
 #include <led-drivers/LedDevice.h>
 #include "ProviderRestApi.h"
 #include "ProviderUdp.h"
+#include <array>
 
 class DriverNetWled : public ProviderUdp
 {
@@ -32,6 +33,10 @@ private:
 	int		_brightnessLevel;
 	bool	_restoreConfig;
 	QJsonDocument _configBackup;
+
+	// ProviderUdp copies each datagram synchronously, so this storage can be reused.
+	static constexpr std::size_t MAX_UDP_PACKET_SIZE = 1472;
+	std::array<uint8_t, MAX_UDP_PACKET_SIZE> _udpPacket{};
 
 	static bool isRegistered;
 };

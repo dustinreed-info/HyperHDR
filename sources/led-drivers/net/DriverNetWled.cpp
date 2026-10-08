@@ -238,6 +238,7 @@ QJsonObject DriverNetWled::discover(const QJsonObject& /*params*/)
 	return devicesDiscovered;
 }
 
+// Preserve the v22 DRGB/DNRGB packet layout without allocating for each frame.
 int DriverNetWled::writeFiniteColors(const std::vector<ColorRgb>& ledValues)
 {
 	if (ledValues.size() != _ledCount)
@@ -248,12 +249,11 @@ int DriverNetWled::writeFiniteColors(const std::vector<ColorRgb>& ledValues)
 	else if (ledValues.size() <= 490)
 	{
 		int wledSize = _ledRGBCount + 2;
-		std::vector<uint8_t> wledData(wledSize, 0);
-		wledData[0] = 2;
-		wledData[1] = 255;
-		memcpy(wledData.data() + 2, ledValues.data(), _ledRGBCount);
+		_udpPacket[0] = 2;
+		_udpPacket[1] = 255;
+		memcpy(_udpPacket.data() + 2, ledValues.data(), _ledRGBCount);
 
-		return writeBytes(wledSize, wledData.data());
+		return writeBytes(wledSize, _udpPacket.data());
 	}
 	else
 	{
@@ -264,15 +264,14 @@ int DriverNetWled::writeFiniteColors(const std::vector<ColorRgb>& ledValues)
 		while (start < end)
 		{
 			auto realSize = std::min(static_cast<long int>(end - start), static_cast<long int>(489 * sizeof(ColorRgb)));
-			std::vector<uint8_t> wledData(realSize + 4, 0);
-			wledData[0] = 4;
-			wledData[1] = 255;
-			wledData[2] = ((offset >> 8) & 0xff);
-			wledData[3] = (offset & 0xff);
-			memcpy(wledData.data() + 4, start, realSize);
+			_udpPacket[0] = 4;
+			_udpPacket[1] = 255;
+			_udpPacket[2] = ((offset >> 8) & 0xff);
+			_udpPacket[3] = (offset & 0xff);
+			memcpy(_udpPacket.data() + 4, start, realSize);
 			start += realSize;
 			offset += realSize / sizeof(ColorRgb);
-			writeBytes(static_cast<int>(wledData.size()), wledData.data());
+			writeBytes(static_cast<int>(realSize + 4), _udpPacket.data());
 		}
 
 		return _ledRGBCount;
