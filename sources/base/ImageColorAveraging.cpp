@@ -47,12 +47,14 @@ ImageColorAveraging::ImageColorAveraging(
 				const unsigned horizontalBorder,
 				const unsigned verticalBorder,
 				const quint8 /*instanceIndex*/,
-				const std::vector<LedString::Led>& leds)
+				const std::vector<LedString::Led>& leds,
+				const bool subtitleFilter)
 	: _width(width)
 	, _height(height)
 	, _sparseProcessing(sparseProcessing)
 	, _horizontalBorder(horizontalBorder)
 	, _verticalBorder(verticalBorder)
+	, _subtitleFilter(subtitleFilter)
 	, _colorsMap()
 	, _colorGroups()
 {
@@ -64,6 +66,9 @@ ImageColorAveraging::ImageColorAveraging(
 	_mappingType = mappingType;
 
 	_colorsMap.reserve(leds.size());
+	_bottomEdge.reserve(leds.size());
+	for (const LedString::Led& led : leds)
+		_bottomEdge.push_back(led.minY_frac >= 0.8);
 
 	const int32_t xOffset = _verticalBorder;
 	const int32_t actualWidth = _width - 2 * _verticalBorder;
@@ -207,10 +212,49 @@ void  ImageColorAveraging::getUnicolorForLeds(std::vector<float3>& ledColors, co
 
 void ImageColorAveraging::getMulticolorForLeds(std::vector<float3>& ledColors, const Image<ColorRgb>& image) const
 {
-	for (auto colors = _colorsMap.begin(); colors != _colorsMap.end(); ++colors)
+	for (size_t i = 0; i < _colorsMap.size(); ++i)
 	{
-		ledColors.push_back(calcMulticolorForLeds(image, *colors));
+		if (_subtitleFilter && _bottomEdge[i])
+			ledColors.push_back(calcSubtitleFilteredColor(image, _colorsMap[i]));
+		else
+			ledColors.push_back(calcMulticolorForLeds(image, _colorsMap[i]));
 	}
+}
+
+// Subtitle filter for bottom-edge LEDs. In a dark area, a small share of light grey/white or
+// yellow pixels is almost always caption text: leave those pixels out of the average so the LED
+// follows the dark scene. Bright areas and areas dominated by light pixels are averaged as usual.
+float3 ImageColorAveraging::calcSubtitleFilteredColor(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors) const
+{
+	if (colors.empty())
+		return float3{ 0, 0, 0 };
+
+	const uint8_t* imgData = image.rawMem();
+	const auto luma = [](unsigned r, unsigned g, unsigned b) { return (54 * r + 183 * g + 19 * b) >> 8; };
+	const auto isCaption = [&](unsigned r, unsigned g, unsigned b) {
+		const unsigned hi = std::max({ r, g, b }), lo = std::min({ r, g, b });
+		return (luma(r, g, b) > 60 && hi - lo < 64) || (r > 150 && g > 150 && b < r / 2); // white/grey or yellow
+	};
+
+	size_t dark = 0, caption = 0;
+	for (const uint32_t offset : colors)
+	{
+		const unsigned r = imgData[offset], g = imgData[offset + 1], b = imgData[offset + 2];
+		if (luma(r, g, b) < 26) dark++;
+		else if (isCaption(r, g, b)) caption++;
+	}
+	if (caption == 0 || dark * 2 < colors.size() || caption * 10 >= colors.size() * 3)
+		return calcMulticolorForLeds(image, colors);
+
+	linalg::vec<uint_fast64_t, 3> sumLinear(0, 0, 0);
+	for (const uint32_t offset : colors)
+	{
+		const unsigned r = imgData[offset], g = imgData[offset + 1], b = imgData[offset + 2];
+		if (luma(r, g, b) >= 26 && isCaption(r, g, b))
+			continue;
+		sumLinear += InfiniteProcessing::srgbNonlinearToLinear(byte3(r, g, b));
+	}
+	return (static_cast<float3>(sumLinear) / static_cast<float>(colors.size() - caption)) / 65535.0f;
 }
 
 float3 ImageColorAveraging::calcMulticolorForLeds(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors) const

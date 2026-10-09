@@ -976,6 +976,8 @@
   "conf_leds_layout_cl_lightPosTopLeft112": "Top: 0  - 50%  from Left",
   "conf_leds_layout_cl_lightPosTopLeft121": "Top: 50 - 100% from Left",
   "conf_leds_layout_cl_lightPosTopLeftNewMid": "Top: 25 - 75%  from Left",
+  "edt_conf_subtitle_filter_title": "Subtitle filter (dark scenes)",
+  "edt_conf_subtitle_filter_expl": "Bottom-edge LEDs ignore light grey/white and yellow caption pixels when the rest of their area is dark, so subtitles do not light the LEDs. A small white object at the bottom of a dark scene is dimmed too.",
   "edt_conf_sparse_processing_title": "Sparse processing",
   "edt_conf_sparse_processing_expl": "Only every second pixel and line will be processed for computing areas' colors. Useful for saving resources especially for large areas (ex. whole screen, Philips Hue).",
   "edt_conf_sound_heading_title": "Sound device for effects",

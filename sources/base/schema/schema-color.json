@@ -25,6 +25,14 @@
 			"required" : true,
 			"propertyOrder" : 2
 		},
+		"subtitle_filter" :
+		{
+			"type" : "boolean",
+			"format": "checkbox",
+			"title" : "edt_conf_subtitle_filter_title",
+			"default" : false,
+			"propertyOrder" : 2
+		},
 		"channelAdjustment" :
 		{
 			"type" : "array",

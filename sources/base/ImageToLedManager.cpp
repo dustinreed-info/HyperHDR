@@ -49,7 +49,8 @@ void ImageToLedManager::registerProcessingUnit(
 			horizontalBorder,
 			verticalBorder,
 			_instanceIndex,
-			_ledString.leds());
+			_ledString.leds(),
+			_subtitleFilter);
 	else
 		_colorAveraging = nullptr;
 }
@@ -102,6 +103,15 @@ void ImageToLedManager::handleSettingsUpdate(settings::type type, const QJsonDoc
 
 		bool newSparse = obj["sparse_processing"].toBool(false);
 		setSparseProcessing(newSparse);
+
+		const bool newSubtitleFilter = obj["subtitle_filter"].toBool(false);
+		if (newSubtitleFilter != _subtitleFilter)
+		{
+			_subtitleFilter = newSubtitleFilter;
+			Info(_log, "Subtitle filter: {:s}", (_subtitleFilter) ? "enabled" : "disabled");
+			if (_colorAveraging != nullptr)
+				registerProcessingUnit(_colorAveraging->width(), _colorAveraging->height(), 0, 0);
+		}
 	}
 }
 

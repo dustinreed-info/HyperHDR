@@ -29,7 +29,8 @@ namespace hyperhdr
 			const unsigned horizontalBorder,
 			const unsigned verticalBorder,
 			const quint8 instanceIndex,
-			const std::vector<LedString::Led>& leds);
+			const std::vector<LedString::Led>& leds,
+			const bool subtitleFilter = false);
 
 		unsigned width() const;
 		unsigned height() const;
@@ -49,11 +50,14 @@ namespace hyperhdr
 		const unsigned _horizontalBorder;
 		const unsigned _verticalBorder;
 		int _mappingType;
+		const bool _subtitleFilter;
 
 		std::vector<std::vector<uint32_t>> _colorsMap;
+		std::vector<bool> _bottomEdge; // LED samples the bottom edge, where subtitles are drawn
 		std::map<int, std::vector<uint32_t>> _colorGroups;
 
 		linalg::aliases::float3 calcMulticolorForLeds(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors) const;
+		linalg::aliases::float3 calcSubtitleFilteredColor(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors) const;
 		linalg::aliases::float3 calcUnicolorForLeds(const Image<ColorRgb>& image) const;
 	};
 }
