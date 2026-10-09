@@ -30,6 +30,7 @@
 #include <infinite-color-engine/InfiniteProcessing.h>
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 #include <iterator>
 
@@ -68,8 +69,13 @@ ImageColorAveraging::ImageColorAveraging(
 	_colorsMap.reserve(leds.size());
 	_bottomEdge.reserve(leds.size());
 	for (const LedString::Led& led : leds)
+	{
+		const double centerX = (led.minX_frac + led.maxX_frac) / 2;
 		_bottomEdge.push_back(led.minY_frac >= 0.8);
+		_bottomCenter.push_back(led.minY_frac >= 0.8 && centerX >= 0.15 && centerX <= 0.85);
+	}
 	_subtitleHold.assign(leds.size(), 0);
+	_subtitleMode.assign(leds.size(), 0);
 
 	const int32_t xOffset = _verticalBorder;
 	const int32_t actualWidth = _width - 2 * _verticalBorder;
@@ -216,20 +222,23 @@ void ImageColorAveraging::getMulticolorForLeds(std::vector<float3>& ledColors, c
 	for (size_t i = 0; i < _colorsMap.size(); ++i)
 	{
 		if (_subtitleFilter && _bottomEdge[i])
-			ledColors.push_back(calcSubtitleFilteredColor(image, _colorsMap[i], _subtitleHold[i]));
+			ledColors.push_back(calcSubtitleFilteredColor(image, _colorsMap[i], _bottomCenter[i], _subtitleHold[i], _subtitleMode[i]));
 		else
 			ledColors.push_back(calcMulticolorForLeds(image, _colorsMap[i]));
 	}
 }
 
-// Subtitle filter for bottom-edge LEDs. A dark area whose remaining pixels are grey/white or
-// yellow is almost always caption text over a dark scene: leave the text pixels out of the
-// average so the LED follows the scene. Dimmer grey pixels count as text too, so words fading
-// in are covered. Once engaged, the filter is held for a few frames while the area stays dark,
-// so a new word or a scrolling line cannot flash the LED. Bright or colourful areas are averaged as usual.
-float3 ImageColorAveraging::calcSubtitleFilteredColor(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors, uint8_t& hold) const
+// Subtitle filter for bottom-edge LEDs, so caption text does not light the LEDs.
+// Dark scenes: an area made of dark pixels plus grey/white or yellow pixels is caption text over
+// the scene; leave the text pixels (including dimmer ones from words fading in) out of the average.
+// Bright scenes (middle of the bottom edge only, where captions are drawn): a small minority of
+// near-white pixels over clearly darker or coloured content is caption text; leave it out. Large
+// white areas are kept. Once engaged, the filter is held for a few frames so new words or scrolling
+// lines cannot flash the LED.
+float3 ImageColorAveraging::calcSubtitleFilteredColor(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors, bool center, uint8_t& hold, uint8_t& mode) const
 {
 	constexpr uint8_t HOLD_FRAMES = 12;
+	constexpr uint8_t DARK_TEXT = 1, BRIGHT_TEXT = 2;
 	if (colors.empty())
 		return float3{ 0, 0, 0 };
 
@@ -239,34 +248,52 @@ float3 ImageColorAveraging::calcSubtitleFilteredColor(const Image<ColorRgb>& ima
 		const unsigned hi = std::max({ r, g, b }), lo = std::min({ r, g, b });
 		return luma(r, g, b) >= 26 && (hi - lo < 64 || (r > 150 && g > 150 && b < r / 2)); // grey/white or yellow
 	};
+	const auto isWhite = [&](unsigned r, unsigned g, unsigned b) {
+		return luma(r, g, b) >= 190 && std::max({ r, g, b }) - std::min({ r, g, b }) < 48;
+	};
 
-	size_t dark = 0, text = 0;
+	size_t dark = 0, text = 0, white = 0;
+	std::array<uint16_t, 256> restLuma{}; // luma histogram of the non-white pixels
 	for (const uint32_t offset : colors)
 	{
 		const unsigned r = imgData[offset], g = imgData[offset + 1], b = imgData[offset + 2];
-		if (luma(r, g, b) < 26) dark++;
+		const unsigned y = luma(r, g, b);
+		if (y < 26) dark++;
 		else if (isText(r, g, b)) text++;
+		if (isWhite(r, g, b)) white++;
+		else restLuma[y]++;
 	}
 	const size_t n = colors.size();
+	unsigned restMedian = 255;
+	for (size_t seen = 0, y = 0; y < 256 && n > white; ++y)
+		if ((seen += restLuma[y]) * 2 >= n - white) { restMedian = unsigned(y); break; }
+
 	const bool mostlyDark = dark * 10 >= n * 3;
+	const bool contrast = center && white < n && restMedian <= 150;
 	if (text > 0 && mostlyDark && (dark + text) * 10 >= n * 9)
-		hold = HOLD_FRAMES;
-	else if (hold > 0 && mostlyDark)
+		{ hold = HOLD_FRAMES; mode = DARK_TEXT; }
+	else if (contrast && white > 0 && white * 10 <= n * 4)
+		{ hold = HOLD_FRAMES; mode = BRIGHT_TEXT; }
+	else if (hold > 0 && (mode == DARK_TEXT ? mostlyDark : contrast))
 		hold--;
 	else
 		hold = 0;
-	if (hold == 0 || text == 0 || text == n)
+	if (hold == 0)
 		return calcMulticolorForLeds(image, colors);
 
 	linalg::vec<uint_fast64_t, 3> sumLinear(0, 0, 0);
+	size_t kept = 0;
 	for (const uint32_t offset : colors)
 	{
 		const unsigned r = imgData[offset], g = imgData[offset + 1], b = imgData[offset + 2];
-		if (isText(r, g, b))
+		if (mode == DARK_TEXT ? isText(r, g, b) : isWhite(r, g, b))
 			continue;
 		sumLinear += InfiniteProcessing::srgbNonlinearToLinear(byte3(r, g, b));
+		kept++;
 	}
-	return (static_cast<float3>(sumLinear) / static_cast<float>(n - text)) / 65535.0f;
+	if (kept == 0)
+		return calcMulticolorForLeds(image, colors);
+	return (static_cast<float3>(sumLinear) / static_cast<float>(kept)) / 65535.0f;
 }
 
 float3 ImageColorAveraging::calcMulticolorForLeds(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors) const

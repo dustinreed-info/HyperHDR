@@ -54,11 +54,13 @@ namespace hyperhdr
 
 		std::vector<std::vector<uint32_t>> _colorsMap;
 		std::vector<bool> _bottomEdge; // LED samples the bottom edge, where subtitles are drawn
+		std::vector<bool> _bottomCenter; // bottom LED in the middle 70% of the width, where captions are drawn
 		mutable std::vector<uint8_t> _subtitleHold; // frames the subtitle filter stays engaged per LED
+		mutable std::vector<uint8_t> _subtitleMode; // 1: dark-scene text, 2: bright-scene white text
 		std::map<int, std::vector<uint32_t>> _colorGroups;
 
 		linalg::aliases::float3 calcMulticolorForLeds(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors) const;
-		linalg::aliases::float3 calcSubtitleFilteredColor(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors, uint8_t& hold) const;
+		linalg::aliases::float3 calcSubtitleFilteredColor(const Image<ColorRgb>& image, const std::vector<uint32_t>& colors, bool center, uint8_t& hold, uint8_t& mode) const;
 		linalg::aliases::float3 calcUnicolorForLeds(const Image<ColorRgb>& image) const;
 	};
 }
