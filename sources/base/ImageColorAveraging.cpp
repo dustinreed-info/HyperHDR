@@ -261,6 +261,16 @@ float3 ImageColorAveraging::calcSubtitleFilteredColor(const Image<ColorRgb>& ima
 
 	const auto isDarkText = [&](unsigned r, unsigned g, unsigned b) { return luma(r, g, b) >= 26 && weaklyColoured(r, g, b); };
 	const auto isBrightText = [&](unsigned r, unsigned g, unsigned b) { return luma(r, g, b) >= brightText && weaklyColoured(r, g, b); };
+	// Anti-aliased letter edges: slightly brighter than the area and next to a text pixel.
+	const uint32_t rowBytes = image.width() * 3, imageBytes = rowBytes * image.height();
+	const auto isTextAt = [&](uint32_t offset) { return isBrightText(imgData[offset], imgData[offset + 1], imgData[offset + 2]); };
+	const auto isTextEdge = [&](uint32_t offset, unsigned r, unsigned g, unsigned b) {
+		if (luma(r, g, b) < median + 15 || !weaklyColoured(r, g, b))
+			return false;
+		const uint32_t x = (offset % rowBytes) / 3;
+		return (x > 0 && isTextAt(offset - 3)) || (x + 1 < image.width() && isTextAt(offset + 3)) ||
+			(offset >= rowBytes && isTextAt(offset - rowBytes)) || (offset + rowBytes < imageBytes && isTextAt(offset + rowBytes));
+	};
 
 	size_t dark = 0, darkText = 0, brightCount = 0;
 	for (const uint32_t offset : colors)
@@ -289,7 +299,7 @@ float3 ImageColorAveraging::calcSubtitleFilteredColor(const Image<ColorRgb>& ima
 	for (const uint32_t offset : colors)
 	{
 		const unsigned r = imgData[offset], g = imgData[offset + 1], b = imgData[offset + 2];
-		if (mode == DARK_TEXT ? isDarkText(r, g, b) : isBrightText(r, g, b))
+		if (mode == DARK_TEXT ? isDarkText(r, g, b) : (isBrightText(r, g, b) || isTextEdge(offset, r, g, b)))
 			continue;
 		sumLinear += InfiniteProcessing::srgbNonlinearToLinear(byte3(r, g, b));
 		kept++;
