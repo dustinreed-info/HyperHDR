@@ -71,8 +71,10 @@ ImageColorAveraging::ImageColorAveraging(
 	for (const LedString::Led& led : leds)
 	{
 		const double centerX = (led.minX_frac + led.maxX_frac) / 2;
-		_bottomEdge.push_back(led.minY_frac >= 0.8);
-		_bottomCenter.push_back(led.minY_frac >= 0.8 && centerX >= 0.15 && centerX <= 0.85);
+		// Grouped LEDs average the pixels of the whole group, so one LED's position does not describe them.
+		const bool bottom = led.minY_frac >= 0.8 && led.group <= 0;
+		_bottomEdge.push_back(bottom);
+		_bottomCenter.push_back(bottom && centerX >= 0.15 && centerX <= 0.85);
 	}
 	_subtitleHold.assign(leds.size(), 0);
 	_subtitleMode.assign(leds.size(), 0);
